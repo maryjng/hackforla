@@ -1,6 +1,7 @@
 // Import modules
 const findLinkedIssue = require('../utils/find-linked-issue');
 var fs = require("fs");
+const { devNull } = require('os');
 // Global variables
 var github;
 var context;
@@ -52,7 +53,7 @@ async function main({ g, c }, columnId) {
 			console.log(`Going to ask for an update now for issue #${issueNum}`);
 			await removeLabels(issueNum, toUpdateLabel, statusUpdatedLabel);
 			await addLabels(issueNum, responseObject.labels);
-			await postComment(issueNum, assignees);
+			await postComment(issueNum, assignees, inactiveLabel);
 		} else {
 			console.log(`No updates needed for issue #${issueNum}`);
 			await removeLabels(issueNum, toUpdateLabel, inactiveLabel);
@@ -235,10 +236,17 @@ async function addLabels(issueNum, ...labels) {
     console.error(`Function failed to add labels. Please refer to the error below: \n `, err);
   }
 }
-async function postComment(issueNum, assignees) {
+
+/**
+ * Posts comment to Github
+ * @param {Number} issueNum is an issue's number
+ * @param {String} assignees a list of the issue's assignee's username
+ * @param {String} label is the type of label the comment is being added in response to. Default is null.
+ */
+async function postComment(issueNum, assignees, label=null) {
   try {
     const assigneeString = createAssigneeString(assignees);
-    const instructions = formatComment(assigneeString);
+    const instructions = formatComment(assigneeString, label);
     await github.issues.createComment({
       owner: context.repo.owner,
       repo: context.repo.repo,
@@ -298,7 +306,13 @@ function createAssigneeString(assignees) {
   }
   return assigneeString.join(', ')
 }
-function formatComment(assignees) {
+
+/**
+ * 
+ * @param {String} label is the type of label the comment is being made in response to. Generates a different message to return if it is inactiveLabel. Default is null (will generate update instructions message)
+ */
+function formatComment(assignees, label=null) {
+  const cutoffTimeString = threeDayCutoffTime.toLocaleString('en-US', options);
   const path = './github-actions/add-update-label-weekly/update-instructions-template.md'
   const text = fs.readFileSync(path).toString('utf-8');
   const options = {
@@ -307,7 +321,13 @@ function formatComment(assignees) {
     timeZone: 'America/Los_Angeles',
     timeZoneName: 'short',
   }
-  const cutoffTimeString = threeDayCutoffTime.toLocaleString('en-US', options);
+
+  //label check and plug variables to make completedInstructions, defaults to 'update' instructions if checks are not true
+  if (label == inactiveLabel) {
+    cutoffTimeString = fourteenDayCutoffTime.toLocaleString('en-US', options);
+    path = './github-actions/add-update-label-weekly/two-weeks-inactive-template.md'
+  }
+
   let completedInstuctions = text.replace('${assignees}', assignees).replace('${cutoffTime}', cutoffTimeString);
   return completedInstuctions
 }
